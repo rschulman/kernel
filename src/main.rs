@@ -14,15 +14,41 @@ extern crate x86;
 pub mod panic;
 
 use vga::Vga;
-use x86::segmentation::{DescriptorBuilder, DataSegmentType, CodeSegmentType};
+use x86::segmentation::{
+    DescriptorBuilder, 
+    BuildDescriptor,
+    DataSegmentType, 
+    CodeSegmentType, 
+    SegmentDescriptorBuilder,
+    Descriptor,
+    };
+use x86::dtables::{DescriptorTablePointer, lgdt};
+use x86::Ring;
 
 #[no_mangle]
 pub fn _start() -> ! {
-    let dataDescriptor = DescriptorBuilder::data_descriptor(0, 4*1024*1024, DataSegmentType::ReadWrite);
-    let codeDescriptor = DescriptorBuilder::code_descriptor(0, 4*1024*1024, CodeSegmentType::ExecuteRead);
     let slice = unsafe { core::slice::from_raw_parts_mut(0xb8000 as *mut u8, 4000) };
-
     let mut vga = Vga::new(slice);
+
+    let null_descriptor = Descriptor::NULL;
+    let data_descriptor:Descriptor = DescriptorBuilder::data_descriptor(0, 4*1024*1024, DataSegmentType::ReadWrite)
+        .present()
+        .dpl(Ring::Ring0)
+        .limit_granularity_4kb()
+        .db()
+        .finish();
+    let code_descriptor = DescriptorBuilder::code_descriptor(0, 4*1024*1024, CodeSegmentType::ExecuteRead)
+        .present()
+        .dpl(Ring::Ring0)
+        .limit_granularity_4kb()
+        .db()
+        .finish();
+
+    let gdt_pointer = DescriptorTablePointer::new_from_slice(&[null_descriptor, data_descriptor, code_descriptor]);
+
+    kprintln!(vga, "Loading GDT...");
+    unsafe { lgdt(&gdt_pointer) };
+    kprintln!(vga, "Done!");
 
     kprintln!(vga, "hello world");
 
